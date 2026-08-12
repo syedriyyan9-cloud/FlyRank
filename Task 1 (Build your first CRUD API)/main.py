@@ -71,3 +71,27 @@ def get_task(task_id: int):
         )
     return task
 
+# ============== STAGE 3: Create Endpoint ==============
+
+@app.post("/tasks", status_code=status.HTTP_201_CREATED, tags=["Tasks"])
+def create_task(task: TaskCreate):
+    """Create a new task"""
+    global next_id
+    
+    # Validate title
+    if not task.title or not task.title.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Title cannot be empty"
+        )
+    
+    # Create the new task
+    new_task = {
+        "id": next_id,
+        "title": task.title.strip(),
+        "done": False
+    }
+    tasks.append(new_task)
+    next_id += 1
+    return new_task
+
