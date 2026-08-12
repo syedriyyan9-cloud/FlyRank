@@ -147,3 +147,30 @@ def get_task(task_id: int):
         )
     return row_to_dict(task)
 
+# ============== STAGE 2: Create Endpoint with Database ==============
+
+@app.post("/tasks", status_code=status.HTTP_201_CREATED, tags=["Tasks"])
+def create_task(task: TaskCreate):
+    """Create a new task in the database"""
+    # Validate title
+    if not task.title or not task.title.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Title cannot be empty"
+        )
+    
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO tasks (title, done) VALUES (?, ?)",
+            (task.title.strip(), 0)
+        )
+        conn.commit()
+        
+        # Get the newly created task
+        task_id = cursor.lastrowid
+        cursor.execute("SELECT * FROM tasks WHERE id = ?", (task_id,))
+        new_task = cursor.fetchone()
+        
+    return row_to_dict(new_task)
+
