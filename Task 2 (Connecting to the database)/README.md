@@ -316,7 +316,7 @@ content-length: 120
 The API includes auto-generated Swagger UI documentation available at:  
 👉 **`http://localhost:8000/docs`**
 
-![Swagger UI](swagger-screenshot.png)
+![Swagger UI](Task%202%20(Connecting%20to%20the%20database)/screenshots/swagger-screenshot.png)
 
 ### Key Features:
 - Interactive API documentation for testing live requests directly in the browser ("Try it out").
