@@ -316,7 +316,7 @@ content-length: 120
 The API includes auto-generated Swagger UI documentation available at:  
 👉 **`http://localhost:8000/docs`**
 
-![Swagger UI](screenshots/swagger-ui.png)
+![Swagger UI](swagger-screenshot.png)
 
 ### Key Features:
 - Interactive API documentation for testing live requests directly in the browser ("Try it out").
