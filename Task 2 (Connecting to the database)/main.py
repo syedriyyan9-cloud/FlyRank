@@ -124,3 +124,26 @@ def health_check():
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=f"Database connection failed: {str(e)}"
         )
+
+# ============== STAGE 1: Read Endpoints with Database ==============
+
+@app.get("/tasks", tags=["Tasks"])
+def get_all_tasks():
+    """Get all tasks from the database"""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM tasks ORDER BY id")
+        rows = cursor.fetchall()
+        return [row_to_dict(row) for row in rows]
+
+@app.get("/tasks/{task_id}", tags=["Tasks"])
+def get_task(task_id: int):
+    """Get a single task by its ID from the database"""
+    task = get_task_from_db(task_id)
+    if task is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Task {task_id} not found"
+        )
+    return row_to_dict(task)
+
