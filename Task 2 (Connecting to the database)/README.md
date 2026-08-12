@@ -63,7 +63,7 @@ A simple RESTful API for managing a to-do list, built with **FastAPI** and **SQL
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/yourusername/todo-api.git
+   git clone https://github.com/syedriyyan9-cloud/FlyRank/tree/main/Task%202%20(Connecting%20to%20the%20database)
    cd todo-api
    ```
 
