@@ -242,3 +242,105 @@ def delete_task(task_id: int):
     
     return None
 
+# ============== EXTRA: Stretch Goals with Database ==============
+
+@app.get("/tasks/filter/", tags=["Tasks"])
+def filter_tasks(done: Optional[bool] = None, search: Optional[str] = None):
+    """Filter tasks by done status and/or search by title using SQL"""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        
+        # Build query dynamically
+        conditions = []
+        values = []
+        
+        if done is not None:
+            conditions.append("done = ?")
+            values.append(1 if done else 0)
+        
+        if search:
+            conditions.append("title LIKE ?")
+            values.append(f"%{search}%")
+        
+        query = "SELECT * FROM tasks"
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
+        query += " ORDER BY id"
+        
+        cursor.execute(query, values)
+        rows = cursor.fetchall()
+        return [row_to_dict(row) for row in rows]
+
+@app.get("/stats", tags=["Tasks"])
+def get_stats():
+    """Get statistics about tasks using SQL COUNT"""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        
+        # Total tasks
+        cursor.execute("SELECT COUNT(*) FROM tasks")
+        total = cursor.fetchone()[0]
+        
+        # Completed tasks
+        cursor.execute("SELECT COUNT(*) FROM tasks WHERE done = 1")
+        done = cursor.fetchone()[0]
+        
+        # Open tasks
+        open_tasks = total - done
+        
+        return {
+            "total": total,
+            "done": done,
+            "open": open_tasks
+        }
+
+@app.post("/reset", status_code=status.HTTP_200_OK, tags=["Tasks"])
+def reset_tasks():
+    """Reset tasks to the default examples"""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        
+        # Delete all tasks
+        cursor.execute("DELETE FROM tasks")
+        
+        # Insert example tasks
+        example_tasks = [
+            ("Learn FastAPI", 0),
+            ("Build CRUD API", 0),
+            ("Write documentation", 1)
+        ]
+        cursor.executemany(
+            "INSERT INTO tasks (title, done) VALUES (?, ?)",
+            example_tasks
+        )
+        conn.commit()
+        
+        # Get reset tasks
+        cursor.execute("SELECT * FROM tasks ORDER BY id")
+        rows = cursor.fetchall()
+        
+    return {
+        "message": "Tasks reset to default",
+        "tasks": [row_to_dict(row) for row in rows]
+    }
+
+@app.get("/database/info", tags=["Database"])
+def get_database_info():
+    """Get information about the database"""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        
+        # Get table info
+        cursor.execute("PRAGMA table_info(tasks)")
+        columns = [{"name": row[1], "type": row[2]} for row in cursor.fetchall()]
+        
+        # Get row count
+        cursor.execute("SELECT COUNT(*) FROM tasks")
+        row_count = cursor.fetchone()[0]
+        
+        return {
+            "database_file": DATABASE_FILE,
+            "table_name": "tasks",
+            "columns": columns,
+            "row_count": row_count
+        }
