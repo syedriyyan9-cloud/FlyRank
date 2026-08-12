@@ -174,3 +174,71 @@ def create_task(task: TaskCreate):
         
     return row_to_dict(new_task)
 
+# ============== STAGE 3: Update and Delete Endpoints with Database ==============
+
+@app.put("/tasks/{task_id}", tags=["Tasks"])
+def update_task(task_id: int, task_update: TaskUpdate):
+    """Update an existing task in the database"""
+    # Check if task exists
+    existing_task = get_task_from_db(task_id)
+    if existing_task is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Task {task_id} not found"
+        )
+    
+    # Build update query dynamically
+    update_fields = []
+    values = []
+    
+    if task_update.title is not None:
+        if not task_update.title.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Title cannot be empty"
+            )
+        update_fields.append("title = ?")
+        values.append(task_update.title.strip())
+    
+    if task_update.done is not None:
+        update_fields.append("done = ?")
+        values.append(1 if task_update.done else 0)
+    
+    if not update_fields:
+        # No fields to update, return existing task
+        return row_to_dict(existing_task)
+    
+    # Add updated_at timestamp
+    update_fields.append("updated_at = CURRENT_TIMESTAMP")
+    values.append(task_id)
+    
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        query = f"UPDATE tasks SET {', '.join(update_fields)} WHERE id = ?"
+        cursor.execute(query, values)
+        conn.commit()
+        
+        # Get updated task
+        cursor.execute("SELECT * FROM tasks WHERE id = ?", (task_id,))
+        updated_task = cursor.fetchone()
+        
+    return row_to_dict(updated_task)
+
+@app.delete("/tasks/{task_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["Tasks"])
+def delete_task(task_id: int):
+    """Delete a task from the database"""
+    # Check if task exists
+    existing_task = get_task_from_db(task_id)
+    if existing_task is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Task {task_id} not found"
+        )
+    
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
+        conn.commit()
+    
+    return None
+
