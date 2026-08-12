@@ -134,3 +134,42 @@ def delete_task(task_id: int):
     tasks.remove(task)
     return None
 
+# ============== STRETCH GOALS: Extras ==============
+
+@app.get("/tasks/filter/", tags=["Tasks"])
+def filter_tasks(done: Optional[bool] = None, search: Optional[str] = None):
+    """Filter tasks by done status and/or search by title"""
+    filtered_tasks = tasks.copy()
+    
+    if done is not None:
+        filtered_tasks = [t for t in filtered_tasks if t["done"] == done]
+    
+    if search:
+        search_lower = search.lower()
+        filtered_tasks = [t for t in filtered_tasks if search_lower in t["title"].lower()]
+    
+    return filtered_tasks
+
+@app.get("/stats", tags=["Tasks"])
+def get_stats():
+    """Get statistics about tasks"""
+    total = len(tasks)
+    done = sum(1 for t in tasks if t["done"])
+    open_tasks = total - done
+    return {
+        "total": total,
+        "done": done,
+        "open": open_tasks
+    }
+
+@app.post("/reset", status_code=status.HTTP_200_OK, tags=["Tasks"])
+def reset_tasks():
+    """Reset tasks to the default examples"""
+    global tasks, next_id
+    tasks = [
+        {"id": 1, "title": "Learn FastAPI", "done": False},
+        {"id": 2, "title": "Build CRUD API", "done": False},
+        {"id": 3, "title": "Write documentation", "done": True}
+    ]
+    next_id = 4
+    return {"message": "Tasks reset to default", "tasks": tasks}
