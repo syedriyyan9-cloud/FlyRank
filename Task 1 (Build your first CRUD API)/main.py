@@ -95,3 +95,42 @@ def create_task(task: TaskCreate):
     next_id += 1
     return new_task
 
+# ============== STAGE 4: Update and Delete Endpoints ==============
+
+@app.put("/tasks/{task_id}", tags=["Tasks"])
+def update_task(task_id: int, task_update: TaskUpdate):
+    """Update an existing task"""
+    task = find_task(task_id)
+    if task is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Task {task_id} not found"
+        )
+    
+    # Validate title if provided
+    if task_update.title is not None:
+        if not task_update.title.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Title cannot be empty"
+            )
+        task["title"] = task_update.title.strip()
+    
+    # Update done status if provided
+    if task_update.done is not None:
+        task["done"] = task_update.done
+    
+    return task
+
+@app.delete("/tasks/{task_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["Tasks"])
+def delete_task(task_id: int):
+    """Delete a task"""
+    task = find_task(task_id)
+    if task is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Task {task_id} not found"
+        )
+    tasks.remove(task)
+    return None
+
