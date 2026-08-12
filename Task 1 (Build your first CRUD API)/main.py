@@ -53,3 +53,21 @@ def health_check():
     """Check if the server is running"""
     return {"status": "ok"}
 
+# ============== STAGE 2: Read Endpoints ==============
+
+@app.get("/tasks", tags=["Tasks"])
+def get_all_tasks():
+    """Get all tasks"""
+    return tasks
+
+@app.get("/tasks/{task_id}", tags=["Tasks"])
+def get_task(task_id: int):
+    """Get a single task by its ID"""
+    task = find_task(task_id)
+    if task is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Task {task_id} not found"
+        )
+    return task
+
