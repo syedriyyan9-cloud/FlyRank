@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, status, Request
+from fastapi import FastAPI, HTTPException, status, Request, Depends
 from pydantic import BaseModel
 from supabase import create_client, Client
 import os
@@ -18,22 +18,19 @@ class AuthRequest(BaseModel):
     email: str
     password: str
 
-# ========== Helper: Extract & Verify Token ==========
+# ========== Auth Dependency (Middleware) ==========
 
 def verify_token(token: str):
     """Verify JWT token with Supabase"""
     try:
-        # Get user from token
         response = supabase.auth.get_user(token)
-        
         if response.user is None:
             return None
-        
         return response.user
     except Exception as e:
         return None
 
-def get_current_user(request: Request):
+async def get_current_user(request: Request):
     """Extract and verify token from Authorization header"""
     auth_header = request.headers.get("Authorization")
     
@@ -54,6 +51,13 @@ def get_current_user(request: Request):
         raise HTTPException(status_code=401, detail="Invalid or expired token")
     
     return user
+
+def get_token_from_request(request: Request):
+    """Extract token for logout"""
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Access token required")
+    return auth_header.split(" ")[1]
 
 # ========== ROOT & HEALTH ==========
 
@@ -113,16 +117,36 @@ def login(auth: AuthRequest):
 def public_info():
     return {"message": "Welcome stranger! This info is public."}
 
-# ========== STAGE 3: Protected Profile with Verification ==========
+# ========== STAGE 3 & 4: Protected Routes with Middleware ==========
 
 @app.get("/protected/profile")
-def protected_profile(request: Request):
-    """Protected endpoint - verifies token and returns user data"""
-    user = get_current_user(request)
-    
+def protected_profile(user: dict = Depends(get_current_user)):
+    """Protected endpoint - uses dependency for auth"""
     return {
         "id": user.id,
         "email": user.email,
         "created_at": user.created_at,
         "message": "This is your secure profile data"
     }
+
+@app.get("/protected/dashboard")
+def protected_dashboard(user: dict = Depends(get_current_user)):
+    """Another protected endpoint using the same middleware"""
+    return {
+        "user_id": user.id,
+        "email": user.email,
+        "message": "Welcome to your dashboard!",
+        "tasks_count": 5  # Placeholder
+    }
+
+# ========== STAGE 4: Logout ==========
+
+@app.post("/auth/logout", status_code=status.HTTP_204_NO_CONTENT)
+def logout(request: Request, token: str = Depends(get_token_from_request)):
+    """Logout - invalidates the session"""
+    try:
+        # Sign out with Supabase
+        supabase.auth.sign_out()
+        return None
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
