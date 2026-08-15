@@ -1,0 +1,18 @@
+{
+  "start_time": "2026-08-15T20:50:58.491822+00:00",
+  "end_time": "2026-08-15T20:51:07.061040+00:00",
+  "duration_seconds": 8.57,
+  "total_urls": 61,
+  "pages_fetched": 60,
+  "cache_hits": 60,
+  "valid_records": 60,
+  "invalid_records": 0,
+  "failed_pages": 1,
+  "failed_urls": [
+    {
+      "url": "https://books.toscrape.com/catalogue/nonexistent-book_99999/index.html",
+      "error": "404 Not Found (page doesn't exist)"
+    }
+  ],
+  "successful_urls_count": 60
+}

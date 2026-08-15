@@ -1,1 +1,6 @@
-[]
+[
+  {
+    "url": "https://books.toscrape.com/catalogue/nonexistent-book_99999/index.html",
+    "error": "404 Not Found (page doesn't exist)"
+  }
+]
