@@ -18,6 +18,45 @@ class AuthRequest(BaseModel):
     email: str
     password: str
 
+# ========== Helper: Extract & Verify Token ==========
+
+def verify_token(token: str):
+    """Verify JWT token with Supabase"""
+    try:
+        # Get user from token
+        response = supabase.auth.get_user(token)
+        
+        if response.user is None:
+            return None
+        
+        return response.user
+    except Exception as e:
+        return None
+
+def get_current_user(request: Request):
+    """Extract and verify token from Authorization header"""
+    auth_header = request.headers.get("Authorization")
+    
+    if not auth_header:
+        raise HTTPException(status_code=401, detail="Access token required")
+    
+    if not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Invalid authorization format. Use: Bearer <token>")
+    
+    token = auth_header.split(" ")[1]
+    
+    if not token:
+        raise HTTPException(status_code=401, detail="Access token required")
+    
+    user = verify_token(token)
+    
+    if user is None:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    
+    return user
+
+# ========== ROOT & HEALTH ==========
+
 @app.get("/")
 def root():
     return {"message": "Server running and connected to Supabase"}
@@ -68,30 +107,22 @@ def login(auth: AuthRequest):
     except Exception as e:
         raise HTTPException(status_code=401, detail="Invalid login credentials")
 
-# ========== STAGE 2: Public & Protected Routes ==========
+# ========== STAGE 2: Public Route ==========
 
 @app.get("/public/info")
 def public_info():
-    """Public endpoint - no authentication required"""
     return {"message": "Welcome stranger! This info is public."}
+
+# ========== STAGE 3: Protected Profile with Verification ==========
 
 @app.get("/protected/profile")
 def protected_profile(request: Request):
-    """Protected endpoint - requires valid token"""
-    # Extract token from Authorization header
-    auth_header = request.headers.get("Authorization")
+    """Protected endpoint - verifies token and returns user data"""
+    user = get_current_user(request)
     
-    if not auth_header:
-        raise HTTPException(status_code=401, detail="Access token required")
-    
-    # Check if header has Bearer prefix
-    if not auth_header.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Invalid authorization format. Use: Bearer <token>")
-    
-    token = auth_header.split(" ")[1]
-    
-    if not token:
-        raise HTTPException(status_code=401, detail="Access token required")
-    
-    # For now, just return a placeholder (Stage 2 doesn't verify token yet)
-    return {"message": "Token received but not verified yet (Stage 2)", "token_preview": token[:20] + "..."}
+    return {
+        "id": user.id,
+        "email": user.email,
+        "created_at": user.created_at,
+        "message": "This is your secure profile data"
+    }
