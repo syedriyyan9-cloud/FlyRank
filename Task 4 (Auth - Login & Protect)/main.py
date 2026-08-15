@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException, status, Request, Depends
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from supabase import create_client, Client
 import os
@@ -6,7 +7,18 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-app = FastAPI(title="Auth API", version="1.0")
+# ========== Swagger Security Setup ==========
+app = FastAPI(
+    title="Auth API",
+    version="1.0",
+    description="Secure API with Supabase Authentication",
+    swagger_ui_parameters={
+        "persistAuthorization": True
+    }
+)
+
+# Security scheme for Swagger
+security = HTTPBearer(auto_error=False)
 
 # Supabase client
 supabase_url = os.getenv("SUPABASE_URL")
@@ -30,17 +42,12 @@ def verify_token(token: str):
     except Exception as e:
         return None
 
-async def get_current_user(request: Request):
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Extract and verify token from Authorization header"""
-    auth_header = request.headers.get("Authorization")
-    
-    if not auth_header:
+    if credentials is None:
         raise HTTPException(status_code=401, detail="Access token required")
     
-    if not auth_header.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Invalid authorization format. Use: Bearer <token>")
-    
-    token = auth_header.split(" ")[1]
+    token = credentials.credentials
     
     if not token:
         raise HTTPException(status_code=401, detail="Access token required")
@@ -52,12 +59,11 @@ async def get_current_user(request: Request):
     
     return user
 
-def get_token_from_request(request: Request):
+async def get_token_for_logout(credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Extract token for logout"""
-    auth_header = request.headers.get("Authorization")
-    if not auth_header or not auth_header.startswith("Bearer "):
+    if credentials is None:
         raise HTTPException(status_code=401, detail="Access token required")
-    return auth_header.split(" ")[1]
+    return credentials.credentials
 
 # ========== ROOT & HEALTH ==========
 
@@ -113,15 +119,16 @@ def login(auth: AuthRequest):
 
 # ========== STAGE 2: Public Route ==========
 
-@app.get("/public/info")
+@app.get("/public/info", tags=["Public"])
 def public_info():
+    """Public endpoint - no authentication required"""
     return {"message": "Welcome stranger! This info is public."}
 
-# ========== STAGE 3 & 4: Protected Routes with Middleware ==========
+# ========== STAGE 3 & 4: Protected Routes ==========
 
-@app.get("/protected/profile")
+@app.get("/protected/profile", dependencies=[Depends(security)], tags=["Protected"])
 def protected_profile(user: dict = Depends(get_current_user)):
-    """Protected endpoint - uses dependency for auth"""
+    """Protected endpoint - returns user profile data"""
     return {
         "id": user.id,
         "email": user.email,
@@ -129,23 +136,22 @@ def protected_profile(user: dict = Depends(get_current_user)):
         "message": "This is your secure profile data"
     }
 
-@app.get("/protected/dashboard")
+@app.get("/protected/dashboard", dependencies=[Depends(security)], tags=["Protected"])
 def protected_dashboard(user: dict = Depends(get_current_user)):
-    """Another protected endpoint using the same middleware"""
+    """Protected endpoint - returns dashboard data"""
     return {
         "user_id": user.id,
         "email": user.email,
         "message": "Welcome to your dashboard!",
-        "tasks_count": 5  # Placeholder
+        "tasks_count": 5
     }
 
 # ========== STAGE 4: Logout ==========
 
-@app.post("/auth/logout", status_code=status.HTTP_204_NO_CONTENT)
-def logout(request: Request, token: str = Depends(get_token_from_request)):
+@app.post("/auth/logout", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(security)], tags=["Auth"])
+def logout(token: str = Depends(get_token_for_logout)):
     """Logout - invalidates the session"""
     try:
-        # Sign out with Supabase
         supabase.auth.sign_out()
         return None
     except Exception as e:
