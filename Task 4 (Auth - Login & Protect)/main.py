@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, status, Request
 from pydantic import BaseModel
 from supabase import create_client, Client
 import os
@@ -30,11 +30,9 @@ def health():
 
 @app.post("/auth/signup", status_code=status.HTTP_201_CREATED)
 def signup(auth: AuthRequest):
-    # Validate input
     if not auth.email or not auth.password:
         raise HTTPException(status_code=400, detail="Email and password required")
     
-    # Register user with Supabase
     try:
         response = supabase.auth.sign_up({
             "email": auth.email,
@@ -50,11 +48,9 @@ def signup(auth: AuthRequest):
 
 @app.post("/auth/login")
 def login(auth: AuthRequest):
-    # Validate input
     if not auth.email or not auth.password:
         raise HTTPException(status_code=400, detail="Email and password required")
     
-    # Login with Supabase
     try:
         response = supabase.auth.sign_in_with_password({
             "email": auth.email,
@@ -71,3 +67,31 @@ def login(auth: AuthRequest):
         }
     except Exception as e:
         raise HTTPException(status_code=401, detail="Invalid login credentials")
+
+# ========== STAGE 2: Public & Protected Routes ==========
+
+@app.get("/public/info")
+def public_info():
+    """Public endpoint - no authentication required"""
+    return {"message": "Welcome stranger! This info is public."}
+
+@app.get("/protected/profile")
+def protected_profile(request: Request):
+    """Protected endpoint - requires valid token"""
+    # Extract token from Authorization header
+    auth_header = request.headers.get("Authorization")
+    
+    if not auth_header:
+        raise HTTPException(status_code=401, detail="Access token required")
+    
+    # Check if header has Bearer prefix
+    if not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Invalid authorization format. Use: Bearer <token>")
+    
+    token = auth_header.split(" ")[1]
+    
+    if not token:
+        raise HTTPException(status_code=401, detail="Access token required")
+    
+    # For now, just return a placeholder (Stage 2 doesn't verify token yet)
+    return {"message": "Token received but not verified yet (Stage 2)", "token_preview": token[:20] + "..."}
