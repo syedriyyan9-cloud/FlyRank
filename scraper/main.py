@@ -2,9 +2,12 @@ import requests
 import os
 import time
 import json
+import re
 from datetime import datetime, timezone
 from urllib.parse import urljoin
 from bs4 import BeautifulSoup
+from pydantic import BaseModel, ValidationError, HttpUrl, Field, field_validator
+from typing import Optional
 
 # Configuration
 BASE_URL = "https://books.toscrape.com"
@@ -17,6 +20,34 @@ DELAY = 0.5
 
 os.makedirs(CACHE_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+# ========== Pydantic Schema ==========
+
+class BookRecord(BaseModel):
+    """Schema for validated book records"""
+    title: str
+    product_url: str  # Changed from HttpUrl to str for easier validation
+    price_text: str
+    price_gbp: float
+    availability_text: Optional[str] = None
+    rating_text: Optional[str] = None
+    description: Optional[str] = None
+    source_page: str  # Changed from HttpUrl to str
+    fetched_at: str
+    
+    @field_validator('price_gbp')
+    def validate_price(cls, v):
+        if v < 0:
+            raise ValueError('Price cannot be negative')
+        return v
+    
+    @field_validator('title')
+    def validate_title(cls, v):
+        if not v or not v.strip():
+            raise ValueError('Title cannot be empty')
+        return v.strip()
+
+# ========== Helper Functions ==========
 
 def fetch_page(url, cache_key):
     """Fetch a page with caching"""
@@ -33,6 +64,8 @@ def fetch_page(url, cache_key):
         headers = {"User-Agent": USER_AGENT}
         response = requests.get(url, headers=headers, timeout=TIMEOUT)
         response.raise_for_status()
+        # Force UTF-8 encoding
+        response.encoding = 'utf-8'
         
         with open(cache_path, 'w', encoding='utf-8') as f:
             f.write(response.text)
@@ -67,6 +100,18 @@ def get_next_page_url(html, base_url):
             return urljoin(base_url, a_tag['href'])
     return None
 
+def normalize_price(price_text):
+    """Convert £51.77 to 51.77"""
+    if not price_text:
+        return None
+    # Remove currency symbol and any spaces
+    # Handle both £ and Â£
+    cleaned = re.sub(r'[£€$Â]', '', price_text).strip()
+    try:
+        return float(cleaned)
+    except ValueError:
+        return None
+
 def extract_book_details(html, url, source_page):
     """Extract all 8 fields from a book detail page"""
     soup = BeautifulSoup(html, 'html.parser')
@@ -83,7 +128,7 @@ def extract_book_details(html, url, source_page):
     avail_tag = soup.find('p', class_='instock availability')
     availability_text = avail_tag.text.strip() if avail_tag else None
     
-    # Rating (convert class to text)
+    # Rating
     rating_map = {
         'star-rating One': 'One',
         'star-rating Two': 'Two',
@@ -107,13 +152,8 @@ def extract_book_details(html, url, source_page):
     else:
         description = None
     
-    # Product URL is already provided
     product_url = url
-    
-    # Source page
     source_page_url = source_page
-    
-    # Fetched at
     fetched_at = datetime.now(timezone.utc).isoformat()
     
     return {
@@ -127,11 +167,39 @@ def extract_book_details(html, url, source_page):
         "fetched_at": fetched_at
     }
 
+def validate_record(record):
+    """Validate record against schema, return (is_valid, validated_record, error)"""
+    try:
+        # Debug: Print what we're validating
+        print(f"  Validating: {record.get('title')}")
+        print(f"  Price text: {record.get('price_text')}")
+        
+        # Normalize price
+        price_gbp = normalize_price(record.get('price_text'))
+        if price_gbp is None:
+            raise ValueError(f"Invalid price: {record.get('price_text')}")
+        
+        # Add normalized price to record
+        record['price_gbp'] = price_gbp
+        
+        # Validate with Pydantic
+        validated = BookRecord(**record)
+        return True, validated.model_dump(), None
+    except ValidationError as e:
+        print(f"  Validation Error: {e}")
+        return False, None, str(e)
+    except ValueError as e:
+        print(f"  Value Error: {e}")
+        return False, None, str(e)
+    except Exception as e:
+        print(f"  Unexpected Error: {e}")
+        return False, None, str(e)
+
 def main():
     print("=== Scraper Started ===")
     start_time = time.time()
     
-    # Get book URLs from Stage 2
+    # Stage 1: Get book URLs
     urls_file = os.path.join(CACHE_DIR, "book_urls.txt")
     if not os.path.exists(urls_file):
         print("ERROR: Run Stage 2 first to discover book URLs")
@@ -142,12 +210,20 @@ def main():
     
     print(f"\nProcessing {len(book_urls)} books...")
     
-    raw_records = []
+    valid_records = []
+    error_records = []
+    seen_urls = set()
     
     for idx, book_url in enumerate(book_urls, 1):
         print(f"\n[{idx}/{len(book_urls)}] {book_url}")
         
-        # Create cache key from URL
+        # Skip duplicates
+        if book_url in seen_urls:
+            print(f"  SKIPPED: Duplicate URL")
+            continue
+        seen_urls.add(book_url)
+        
+        # Fetch page
         cache_key = book_url.replace(BASE_URL, '').replace('/', '_').strip('_') + '.html'
         if not cache_key:
             cache_key = f"book_{idx}.html"
@@ -156,36 +232,48 @@ def main():
         
         if not html:
             print(f"  SKIPPED: Failed to fetch")
+            error_records.append({
+                "url": book_url,
+                "error": "Failed to fetch page"
+            })
             continue
         
         # Extract details
-        record = extract_book_details(html, book_url, CATALOGUE_URL)
-        raw_records.append(record)
+        raw = extract_book_details(html, book_url, CATALOGUE_URL)
         
-        # Print preview
-        print(f"  Title: {record['title']}")
-        print(f"  Price: {record['price_text']}")
-        print(f"  Rating: {record['rating_text']}")
-        print(f"  Desc: {record['description'][:50] if record['description'] else 'None'}...")
+        # Validate against schema
+        is_valid, validated, error = validate_record(raw)
+        
+        if is_valid:
+            valid_records.append(validated)
+            print(f"  ✓ VALID: {validated['title']} - £{validated['price_gbp']}")
+        else:
+            error_records.append({
+                "url": book_url,
+                "error": error,
+                "raw_data": raw
+            })
+            print(f"  ✗ INVALID: {error}")
         
         # Wait between real requests
         if not from_cache:
             time.sleep(DELAY)
     
-    # Save raw records
-    raw_file = os.path.join(OUTPUT_DIR, "raw_records.json")
-    with open(raw_file, 'w', encoding='utf-8') as f:
-        json.dump(raw_records, f, indent=2, ensure_ascii=False)
+    # Save output files
+    books_file = os.path.join(OUTPUT_DIR, "books.json")
+    with open(books_file, 'w', encoding='utf-8') as f:
+        json.dump(valid_records, f, indent=2, ensure_ascii=False)
+    
+    errors_file = os.path.join(OUTPUT_DIR, "errors.json")
+    with open(errors_file, 'w', encoding='utf-8') as f:
+        json.dump(error_records, f, indent=2, ensure_ascii=False)
     
     print(f"\n=== Summary ===")
     print(f"  Total books processed: {len(book_urls)}")
-    print(f"  Records extracted: {len(raw_records)}")
-    print(f"  Raw records saved to: {raw_file}")
-    
-    # Print one complete record
-    if raw_records:
-        print("\n=== Sample Record ===")
-        print(json.dumps(raw_records[0], indent=2))
+    print(f"  Valid records: {len(valid_records)}")
+    print(f"  Invalid records: {len(error_records)}")
+    print(f"  Records saved to: {books_file}")
+    print(f"  Errors saved to: {errors_file}")
 
 if __name__ == "__main__":
     main()
